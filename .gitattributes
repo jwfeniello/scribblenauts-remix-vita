@@ -1,0 +1,14 @@
+*.sh text eol=lf
+*.py text eol=lf
+*.patch text eol=lf -whitespace
+*.c text eol=lf
+*.h text eol=lf
+extras/livearea/template.xml text eol=crlf
+*.cpp text eol=lf
+*.md text eol=lf
+*.json text eol=lf
+CMakeLists.txt text eol=lf
+*.ps1 text eol=lf
+.gitignore text eol=lf
+.gitmodules text eol=lf
+.gitattributes text eol=lf

@@ -1,0 +1,465 @@
+diff --git a/source/ffp.c b/source/ffp.c
+index 4ef5b9c..7f63f18 100644
+--- a/source/ffp.c
++++ b/source/ffp.c
+@@ -64,7 +64,8 @@
+ enum {
+ 	TEX0_ENV_PASS_COMBINE = 50,
+ 	TEX1_ENV_PASS_COMBINE,
+-	TEX2_ENV_PASS_COMBINE
++	TEX2_ENV_PASS_COMBINE,
++	TEX3_ENV_PASS_COMBINE
+ };
+ 
+ #define set_interleaved_comp(fmt, size, _stride, offs, attrib) \
+@@ -77,7 +78,7 @@ enum {
+ 	streams->stride = stride ? stride : _stride; \
+ 	ffp_dirty_vert_attr |= (1 << attrib);
+ 
+-uint8_t ffp_texcoord_binds[3] = {FFP_ATTRIB_TEX0, FFP_ATTRIB_TEX1, FFP_ATTRIB_TEX2};
++uint8_t ffp_texcoord_binds[4] = {FFP_ATTRIB_TEX0, FFP_ATTRIB_TEX1, FFP_ATTRIB_TEX2, FFP_ATTRIB_TEX3};
+ 
+ // Internal stuffs
+ static uint32_t vertex_count = 0; // Vertex counter for vertex list
+@@ -171,7 +172,7 @@ uint8_t ffp_vertex_attrib_fixed_pos_mask = 0;
+ typedef union {
+ 	struct {
+ 		uint64_t alpha_test_mode : 3; // Frag
+-		uint64_t num_textures : 2; // Frag/Vert
++		uint64_t num_textures : 3; // Frag/Vert: must represent four stages
+ 		uint64_t has_colors : 1; // Frag/Vert
+ 		uint64_t fog_mode : 2; // Frag
+ 		uint64_t clip_planes_num : 3; // Vert
+@@ -181,17 +182,18 @@ typedef union {
+ 		uint64_t shading_mode : 1; // Frag/Vert
+ 		uint64_t normalize : 1; // Vert
+ 		uint64_t tex_env_mode_pass2 : 3; // Frag
+-		uint64_t fixed_mask : 4; // Vert
++		uint64_t fixed_mask : 5; // Vert
+ 		uint64_t pos_fixed_mask : 2; // Vert
+ 		uint64_t point_sprite : 1; // Frag
+ 		uint64_t fast_perspective_correction : 1; // Frag/Vert
+ 		uint64_t srgb_mode : 1; // Frag
+-		uint64_t UNUSED : 29;
++		uint64_t tex_env_mode_pass3 : 3; // Frag
++		uint64_t UNUSED : 24;
+ 	};
+ 	uint64_t raw;
+ } shader_mask;
+-#define VERTEX_SHADER_MASK   (0b0000000000000000000000000000001011111100011000000111111100111000)
+-#define FRAGMENT_SHADER_MASK (0b0000000000000000000000000000011100000011101111111111100011111111)
++#define VERTEX_SHADER_MASK (((shader_mask){.num_textures=7, .has_colors=1, .clip_planes_num=7, .lights_num=15, .shading_mode=1, .normalize=1, .fixed_mask=31, .pos_fixed_mask=3, .fast_perspective_correction=1}).raw)
++#define FRAGMENT_SHADER_MASK (((shader_mask){.alpha_test_mode=7, .num_textures=7, .has_colors=1, .fog_mode=3, .lights_num=15, .tex_env_mode_pass0=7, .tex_env_mode_pass1=7, .shading_mode=1, .tex_env_mode_pass2=7, .point_sprite=1, .fast_perspective_correction=1, .srgb_mode=1, .tex_env_mode_pass3=7}).raw)
+ #else
+ typedef union {
+ 	struct {
+@@ -223,12 +225,13 @@ typedef union {
+ 		combiner_state pass1;
+ #ifdef HAVE_HIGH_FFP_TEXUNITS
+ 		combiner_state pass2;
++		combiner_state pass3;
+ #endif
+ 	};
+ #ifdef HAVE_HIGH_FFP_TEXUNITS
+ 	struct {
+ 		uint64_t raw_high;
+-		uint32_t raw_low;
++		uint64_t raw_low;
+ 	};
+ #else
+ 	uint64_t raw;
+@@ -435,7 +438,7 @@ void setup_combiner_pass(int i, char *dst) {
+ }
+ #endif
+ 
+-uint8_t reload_ffp_shaders(SceGxmVertexAttribute *attrs, SceGxmVertexStream *streams, SceGxmIndexSource index_type) {
++uint16_t reload_ffp_shaders(SceGxmVertexAttribute *attrs, SceGxmVertexStream *streams, SceGxmIndexSource index_type) {
+ #ifdef HAVE_PROFILING
+ 	uint32_t reload_ffp_shaders_start = sceKernelGetProcessTimeLow();
+ #endif
+@@ -502,6 +505,13 @@ uint8_t reload_ffp_shaders(SceGxmVertexAttribute *attrs, SceGxmVertexStream *str
+ #ifndef DISABLE_TEXTURE_COMBINER
+ 				if (mask.tex_env_mode_pass2 == COMBINE)
+ 					cmb_mask.pass2.raw = texture_units[base_texture_id + 2].combiner.raw;
++#endif
++				break;
++			case 3:
++				mask.tex_env_mode_pass3 = texture_units[base_texture_id + 3].env_mode;
++#ifndef DISABLE_TEXTURE_COMBINER
++				if (mask.tex_env_mode_pass3 == COMBINE)
++					cmb_mask.pass3.raw = texture_units[base_texture_id + 3].combiner.raw;
+ #endif
+ 				break;
+ #endif
+@@ -569,8 +579,13 @@ uint8_t reload_ffp_shaders(SceGxmVertexAttribute *attrs, SceGxmVertexStream *str
+ 		draw_mask_state &= ~(1 << FFP_ATTRIB_NORMAL);
+ 	}
+ 	
++#ifdef HAVE_HIGH_FFP_TEXUNITS
++	uint64_t vert_shader_mask = mask.raw & VERTEX_SHADER_MASK;
++	uint64_t frag_shader_mask = mask.raw & FRAGMENT_SHADER_MASK;
++#else
+ 	uint32_t vert_shader_mask = mask.raw & VERTEX_SHADER_MASK;
+ 	uint32_t frag_shader_mask = mask.raw & FRAGMENT_SHADER_MASK;
++#endif
+ 	
+ #ifdef DISABLE_TEXTURE_COMBINER
+ 	#define is_ffp_mask_matching(src_mask, dst_mask) \
+@@ -647,9 +662,9 @@ uint8_t reload_ffp_shaders(SceGxmVertexAttribute *attrs, SceGxmVertexStream *str
+ 	if (ffp_dirty_vert) {
+ 		char fname[256];
+ #ifdef HAVE_HIGH_FFP_TEXUNITS
+-		sprintf(fname, "ux0:data/shader_cache/v%d/v/%016llX-%d.gxp", SHADER_CACHE_MAGIC, vert_shader_mask, WVP_ON_GPU);
++		sprintf(fname, "ux0:data/scribblenauts/shader_cache/v%d/v/%016llX-%d.gxp", SHADER_CACHE_MAGIC, vert_shader_mask, WVP_ON_GPU);
+ #else
+-		sprintf(fname, "ux0:data/shader_cache/v%d/v/%08X-%d.gxp", SHADER_CACHE_MAGIC, vert_shader_mask, WVP_ON_GPU);
++		sprintf(fname, "ux0:data/scribblenauts/shader_cache/v%d/v/%08X-%d.gxp", SHADER_CACHE_MAGIC, vert_shader_mask, WVP_ON_GPU);
+ #endif
+ 		SceUID f = sceIoOpen(fname, SCE_O_RDONLY, 0777);
+ 		if (f >= 0) {
+@@ -683,9 +698,9 @@ uint8_t reload_ffp_shaders(SceGxmVertexAttribute *attrs, SceGxmVertexStream *str
+ #ifdef DUMP_SHADER_SOURCES
+ 			}
+ #ifdef HAVE_HIGH_FFP_TEXUNITS
+-			sprintf(fname, "ux0:data/shader_cache/v%d/v/%016llX-%d.cg", SHADER_CACHE_MAGIC, vert_shader_mask, WVP_ON_GPU);
++			sprintf(fname, "ux0:data/scribblenauts/shader_cache/v%d/v/%016llX-%d.cg", SHADER_CACHE_MAGIC, vert_shader_mask, WVP_ON_GPU);
+ #else
+-			sprintf(fname, "ux0:data/shader_cache/v%d/v/%08X-%d.cg", SHADER_CACHE_MAGIC, vert_shader_mask, WVP_ON_GPU);
++			sprintf(fname, "ux0:data/scribblenauts/shader_cache/v%d/v/%08X-%d.cg", SHADER_CACHE_MAGIC, vert_shader_mask, WVP_ON_GPU);
+ #endif
+ 			// Saving shader source in filesystem cache
+ 			f = sceIoOpen(fname, SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0777);
+@@ -844,15 +859,26 @@ uint8_t reload_ffp_shaders(SceGxmVertexAttribute *attrs, SceGxmVertexStream *str
+ #ifdef HAVE_HIGH_FFP_TEXUNITS
+ 				// Vertex texture coordinates (Third pass)
+ 				if (mask.num_textures > 2) {
+-					if (ffp_dirty_vert_attr & (1 << FFP_ATTRIB_COLOR)) {
++					if (ffp_dirty_vert_attr & (1 << FFP_ATTRIB_TEX2)) {
+ 						vgl_fast_memcpy(&ffp_vertex_attribute[ffp_vertex_num_params], &ffp_vertex_attrib_config[FFP_ATTRIB_TEX(base_texture_id + 2)], sizeof(SceGxmVertexAttribute));
+ 						ffp_vertex_attribute[ffp_vertex_num_params].streamIndex = ffp_vertex_num_params;
+-						ffp_vertex_attribute[ffp_vertex_num_params].regIndex = ffp_vertex_attribs[FFP_ATTRIB_TEX1];
++						ffp_vertex_attribute[ffp_vertex_num_params].regIndex = ffp_vertex_attribs[FFP_ATTRIB_TEX2];
+ 						ffp_vertex_stream[ffp_vertex_num_params].stride = ffp_vertex_stream_config[FFP_ATTRIB_TEX(base_texture_id + 2)].stride;
+ 						ffp_vertex_stream[ffp_vertex_num_params].indexSource = SCE_GXM_INDEX_SOURCE_INDEX_16BIT;
+ 					}
+ 					ffp_vertex_num_params++;
+ 				}
++				// Fourth pass uses its own attribute and stream.
++				if (mask.num_textures > 3) {
++					if (ffp_dirty_vert_attr & (1 << FFP_ATTRIB_TEX3)) {
++						vgl_fast_memcpy(&ffp_vertex_attribute[ffp_vertex_num_params], &ffp_vertex_attrib_config[FFP_ATTRIB_TEX(base_texture_id + 3)], sizeof(SceGxmVertexAttribute));
++						ffp_vertex_attribute[ffp_vertex_num_params].streamIndex = ffp_vertex_num_params;
++						ffp_vertex_attribute[ffp_vertex_num_params].regIndex = ffp_vertex_attribs[FFP_ATTRIB_TEX3];
++						ffp_vertex_stream[ffp_vertex_num_params].stride = ffp_vertex_stream_config[FFP_ATTRIB_TEX(base_texture_id + 3)].stride;
++						ffp_vertex_stream[ffp_vertex_num_params].indexSource = SCE_GXM_INDEX_SOURCE_INDEX_16BIT;
++					}
++					ffp_vertex_num_params++;
++				}
+ #endif
+ 			}
+ 			streams = ffp_vertex_stream;
+@@ -875,15 +901,15 @@ uint8_t reload_ffp_shaders(SceGxmVertexAttribute *attrs, SceGxmVertexStream *str
+ 		char fname[256];
+ #ifndef DISABLE_TEXTURE_COMBINER
+ #ifdef HAVE_HIGH_FFP_TEXUNITS
+-		sprintf(fname, "ux0:data/shader_cache/v%d/f/%016llX-%016llX-%08X.cg", SHADER_CACHE_MAGIC, frag_shader_mask, cmb_mask.raw_high, cmb_mask.raw_low);
++		sprintf(fname, "ux0:data/scribblenauts/shader_cache/v%d/f/%016llX-%016llX-%016llX.gxp", SHADER_CACHE_MAGIC, frag_shader_mask, cmb_mask.raw_high, cmb_mask.raw_low);
+ #else
+-		sprintf(fname, "ux0:data/shader_cache/v%d/f/%08X-%016llX.gxp", SHADER_CACHE_MAGIC, frag_shader_mask, cmb_mask.raw);
++		sprintf(fname, "ux0:data/scribblenauts/shader_cache/v%d/f/%08X-%016llX.gxp", SHADER_CACHE_MAGIC, frag_shader_mask, cmb_mask.raw);
+ #endif
+ #else
+ #ifdef HAVE_HIGH_FFP_TEXUNITS
+-		sprintf(fname, "ux0:data/shader_cache/v%d/f/%016llX-0000000000000000.gxp", SHADER_CACHE_MAGIC, frag_shader_mask);
++		sprintf(fname, "ux0:data/scribblenauts/shader_cache/v%d/f/%016llX-0000000000000000.gxp", SHADER_CACHE_MAGIC, frag_shader_mask);
+ #else
+-		sprintf(fname, "ux0:data/shader_cache/v%d/f/%08X-0000000000000000.gxp", SHADER_CACHE_MAGIC, frag_shader_mask);
++		sprintf(fname, "ux0:data/scribblenauts/shader_cache/v%d/f/%08X-0000000000000000.gxp", SHADER_CACHE_MAGIC, frag_shader_mask);
+ #endif
+ #endif
+ 		SceUID f = sceIoOpen(fname, SCE_O_RDONLY, 0777);
+@@ -900,7 +926,7 @@ uint8_t reload_ffp_shaders(SceGxmVertexAttribute *attrs, SceGxmVertexStream *str
+ 				start_shader_compiler();
+ 
+ 			// Compiling the new shader
+-			char fshader[8192];
++			char fshader[16384];
+ 			char texenv_shad[8192] = {0};
+ 			GLboolean unused_mode[5] = {GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE};
+ 			for (int i = 0; i < mask.num_textures; i++) {
+@@ -954,6 +980,7 @@ uint8_t reload_ffp_shaders(SceGxmVertexAttribute *attrs, SceGxmVertexStream *str
+ 				(mask.tex_env_mode_pass0 != COMBINE) ? mask.tex_env_mode_pass0 : TEX0_ENV_PASS_COMBINE,
+ 				(mask.tex_env_mode_pass1 != COMBINE) ? mask.tex_env_mode_pass1 : TEX1_ENV_PASS_COMBINE,
+ 				(mask.tex_env_mode_pass2 != COMBINE) ? mask.tex_env_mode_pass2 : TEX2_ENV_PASS_COMBINE,
++				(mask.tex_env_mode_pass3 != COMBINE) ? mask.tex_env_mode_pass3 : TEX3_ENV_PASS_COMBINE,
+ 				mask.lights_num, mask.shading_mode, mask.point_sprite, mask.fast_perspective_correction, mask.srgb_mode);
+ #else
+ 			sprintf(fshader, ffp_frag_src, texenv_shad, alpha_op,
+@@ -979,15 +1006,15 @@ uint8_t reload_ffp_shaders(SceGxmVertexAttribute *attrs, SceGxmVertexStream *str
+ 			}
+ #ifndef DISABLE_TEXTURE_COMBINER
+ #ifdef HAVE_HIGH_FFP_TEXUNITS
+-			sprintf(fname, "ux0:data/shader_cache/v%d/f/%016llX-%016llX-%08X.cg", SHADER_CACHE_MAGIC, frag_shader_mask, cmb_mask.raw_high, cmb_mask.raw_low);
++			sprintf(fname, "ux0:data/scribblenauts/shader_cache/v%d/f/%016llX-%016llX-%016llX.cg", SHADER_CACHE_MAGIC, frag_shader_mask, cmb_mask.raw_high, cmb_mask.raw_low);
+ #else
+-			sprintf(fname, "ux0:data/shader_cache/v%d/f/%08X-%016llX.cg", SHADER_CACHE_MAGIC, frag_shader_mask, cmb_mask.raw);
++			sprintf(fname, "ux0:data/scribblenauts/shader_cache/v%d/f/%08X-%016llX.cg", SHADER_CACHE_MAGIC, frag_shader_mask, cmb_mask.raw);
+ #endif
+ #else
+ #ifdef HAVE_HIGH_FFP_TEXUNITS
+-			sprintf(fname, "ux0:data/shader_cache/v%d/f/%016llX-0000000000000000.cg", SHADER_CACHE_MAGIC, frag_shader_mask);
++			sprintf(fname, "ux0:data/scribblenauts/shader_cache/v%d/f/%016llX-0000000000000000.cg", SHADER_CACHE_MAGIC, frag_shader_mask);
+ #else
+-			sprintf(fname, "ux0:data/shader_cache/v%d/f/%08X-0000000000000000.cg", SHADER_CACHE_MAGIC, frag_shader_mask);
++			sprintf(fname, "ux0:data/scribblenauts/shader_cache/v%d/f/%08X-0000000000000000.cg", SHADER_CACHE_MAGIC, frag_shader_mask);
+ #endif
+ #endif
+ 			// Saving shader source in filesystem cache
+@@ -1090,6 +1117,9 @@ uint8_t reload_ffp_shaders(SceGxmVertexAttribute *attrs, SceGxmVertexStream *str
+ 			if (ffp_fragment_params[SCALE_PASS_2_UNIF] >= 0) {
+ 				upload_ffp_fragment_unif(SCALE_PASS_2_UNIF, 0, 1, 2, &texture_units[base_texture_id + 2].rgb_scale)
+ 			}
++			if (ffp_fragment_params[SCALE_PASS_3_UNIF] >= 0) {
++				upload_ffp_fragment_unif(SCALE_PASS_3_UNIF, 0, 1, 2, &texture_units[base_texture_id + 3].rgb_scale)
++			}
+ #endif
+ #endif
+ 			if (ffp_fragment_params[TINT_COLOR_UNIF] >= 0) {
+@@ -1182,7 +1212,7 @@ uint8_t reload_ffp_shaders(SceGxmVertexAttribute *attrs, SceGxmVertexStream *str
+ }
+ 
+ void _glDrawArrays_FixedFunctionIMPL(GLint first, GLsizei count) {
+-	uint8_t mask_state = reload_ffp_shaders(NULL, NULL, SCE_GXM_INDEX_SOURCE_INDEX_16BIT);
++	uint16_t mask_state = reload_ffp_shaders(NULL, NULL, SCE_GXM_INDEX_SOURCE_INDEX_16BIT);
+ #ifdef HAVE_PROFILING
+ 	uint32_t draw_start = sceKernelGetProcessTimeLow();
+ #endif
+@@ -1315,7 +1345,7 @@ void _glDrawArrays_FixedFunctionIMPL(GLint first, GLsizei count) {
+ }
+ 
+ void _glMultiDrawArrays_FixedFunctionIMPL(SceGxmPrimitiveType gxm_p, uint16_t *idx_ptr, const GLint *first, const GLsizei *count, GLint lowest, GLsizei highest, GLsizei drawcount) {
+-	uint8_t mask_state = reload_ffp_shaders(NULL, NULL, SCE_GXM_INDEX_SOURCE_INDEX_16BIT);
++	uint16_t mask_state = reload_ffp_shaders(NULL, NULL, SCE_GXM_INDEX_SOURCE_INDEX_16BIT);
+ #ifdef HAVE_PROFILING
+ 	uint32_t draw_start = sceKernelGetProcessTimeLow();
+ #endif
+@@ -1465,7 +1495,7 @@ void _glMultiDrawArrays_FixedFunctionIMPL(SceGxmPrimitiveType gxm_p, uint16_t *i
+ }
+ 
+ void _glDrawElements_FixedFunctionIMPL(uint16_t *idx_buf, GLsizei count, uint32_t top_idx, uint32_t base_idx, SceGxmIndexSource index_type) {
+-	uint8_t mask_state = reload_ffp_shaders(NULL, NULL, index_type);
++	uint16_t mask_state = reload_ffp_shaders(NULL, NULL, index_type);
+ #ifdef HAVE_PROFILING
+ 	uint32_t draw_start = sceKernelGetProcessTimeLow();
+ #endif
+@@ -2025,12 +2055,9 @@ void glClientActiveTexture(GLenum texture) {
+ 		return;
+ #endif
+ #ifndef SKIP_ERROR_HANDLING
+-	if ((texture < GL_TEXTURE0) && (texture > GL_TEXTURE15)) {
++	if (texture < GL_TEXTURE0 || texture >= GL_TEXTURE0 + TEXTURE_COORDS_NUM) {
+ 		SET_GL_ERROR_WITH_VALUE(GL_INVALID_ENUM, texture)
+ 	}
+-	if (texture - GL_TEXTURE0 > TEXTURE_COORDS_NUM) {
+-		vgl_log("%s:%d Attempting to use a too high client texture unit (GL_TEXTURE%d).\n", __FILE__, __LINE__, texture - GL_TEXTURE0);
+-	}
+ #endif
+ 	client_texture_unit = texture - GL_TEXTURE0;
+ }
+diff --git a/source/shaders/ffp_ext_f.h b/source/shaders/ffp_ext_f.h
+index ed7c1e9..7b01ecd 100644
+--- a/source/shaders/ffp_ext_f.h
++++ b/source/shaders/ffp_ext_f.h
+@@ -2,6 +2,7 @@ const char *ffp_frag_src =
+ R"(uniform float2 Opass0_scale;
+ uniform float2 Ppass1_scale;
+ uniform float2 Qpass2_scale;
++uniform float2 Rpass3_scale;
+ 
+ %s
+ 
+@@ -12,6 +13,7 @@ uniform float2 Qpass2_scale;
+ #define pass0_func texenv%d
+ #define pass1_func texenv%d
+ #define pass2_func texenv%d
++#define pass3_func texenv%d
+ #define lights_num %d
+ #define shading_mode %d
+ #define point_sprite %d
+@@ -81,6 +83,9 @@ float4 main(
+ 	float2 vTexcoord2 : TEXCOORD1,
+ #if num_textures > 2
+ 	float2 vTexcoord3 : TEXCOORD2,
++#if num_textures > 3
++	float2 vTexcoord4 : TEXCOORD3,
++#endif
+ #endif
+ #endif
+ #endif
+@@ -142,6 +147,9 @@ float4 main(
+ 	prevColor = pass1_func(tex[1], vTexcoord2, prevColor, vColor, ItexEnvColor[1]);
+ #if num_textures > 2
+ 	prevColor = pass2_func(tex[2], vTexcoord3, prevColor, vColor, ItexEnvColor[2]);
++#if num_textures > 3
++	prevColor = pass3_func(tex[3], vTexcoord4, prevColor, vColor, ItexEnvColor[3]);
++#endif
+ #endif
+ #endif
+ 	float4 texColor = prevColor;
+diff --git a/source/shaders/ffp_ext_v.h b/source/shaders/ffp_ext_v.h
+index 01da695..1f86e7a 100644
+--- a/source/shaders/ffp_ext_v.h
++++ b/source/shaders/ffp_ext_v.h
+@@ -4,6 +4,7 @@
+ 	0x02 = Tex0
+ 	0x04 = Tex1
+ 	0x08 = Tex2
++	0x10 = Tex3
+ */
+ 
+ const char *ffp_vert_src =
+@@ -87,6 +88,9 @@ void main(
+ 	float2 Utexcoord1,
+ #if num_textures > 2
+ 	float2 Vtexcoord2,
++#if num_textures > 3
++	float2 Wtexcoord3,
++#endif
+ #endif
+ #endif
+ #endif
+@@ -105,6 +109,9 @@ void main(
+ 	float2 out vTexcoord2 : TEXCOORD1,
+ #if num_textures > 2
+ 	float2 out vTexcoord3 : TEXCOORD2,
++#if num_textures > 3
++	float2 out vTexcoord4 : TEXCOORD3,
++#endif
+ #endif
+ #endif
+ #endif
+@@ -193,6 +200,12 @@ void main(
+ 	Vtexcoord2 = GLFixed2ToFloat2(Vtexcoord2);
+ #endif
+ 	vTexcoord3 = mul(Ktexmat[2], float4(Vtexcoord2, 0.f, 1.f)).xy;
++#if num_textures > 3
++#if (fixed_mode_mask & 0x10) == 0x10
++	Wtexcoord3 = GLFixed2ToFloat2(Wtexcoord3);
++#endif
++	vTexcoord4 = mul(Ktexmat[3], float4(Wtexcoord3, 0.f, 1.f)).xy;
++#endif
+ #endif
+ #endif
+ #endif
+diff --git a/source/shared.h b/source/shared.h
+index c1943b1..4b32f63 100644
+--- a/source/shared.h
++++ b/source/shared.h
+@@ -31,7 +31,7 @@
+ #define TEXTURES_NUM 16384 // Available textures
+ #define TEXTURE_IMAGE_UNITS_NUM 16 // Available texture image units
+ #ifdef HAVE_HIGH_FFP_TEXUNITS
+-#define TEXTURE_COORDS_NUM 3 // Available texture coords sets for multitexturing with ffp
++#define TEXTURE_COORDS_NUM 4 // Scribblenauts uses four fixed-function texture stages
+ #else
+ #define TEXTURE_COORDS_NUM 2 // Available texture coords sets for multitexturing with ffp
+ #endif
+@@ -49,7 +49,7 @@
+ #define FRAME_PURGE_FREQ 4 // Frequency in frames for garbage collection
+ #define BUFFERS_NUM 256 // Maximum amount of framebuffers objects usable
+ #ifdef HAVE_HIGH_FFP_TEXUNITS
+-#define FFP_VERTEX_ATTRIBS_NUM 9 // Number of attributes used in ffp shaders
++#define FFP_VERTEX_ATTRIBS_NUM 10 // Includes the fourth texture-coordinate attribute
+ #else
+ #define FFP_VERTEX_ATTRIBS_NUM 8 // Number of attributes used in ffp shaders
+ #endif
+@@ -174,6 +174,7 @@ typedef enum {
+ 	SCALE_PASS_1_UNIF, // P
+ #ifdef HAVE_HIGH_FFP_TEXUNITS
+ 	SCALE_PASS_2_UNIF, // Q
++	SCALE_PASS_3_UNIF, // R
+ #endif
+ #endif
+ 	FRAGMENT_UNIFORMS_NUM
+@@ -890,6 +891,7 @@ enum {
+ 	FFP_ATTRIB_NORMAL, // T
+ 	FFP_ATTRIB_TEX1, // U
+ 	FFP_ATTRIB_TEX2, // V
++	FFP_ATTRIB_TEX3, // W
+ 	FFP_ATTRIBS_NUM,
+ 	FFP_ATTRIB_MASK_ALL = 0xFFFF
+ };
+@@ -901,9 +903,9 @@ enum {
+ 	FFP_COEFF_NUM
+ };
+ 
+-extern uint8_t ffp_texcoord_binds[3];
++extern uint8_t ffp_texcoord_binds[4];
+ #define FFP_ATTRIB_TEX(i) (ffp_texcoord_binds[i])
+-#define FFP_ATTRIB_IS_TEX(i) (i == FFP_ATTRIB_TEX0 || i == FFP_ATTRIB_TEX1 || i == FFP_ATTRIB_TEX2)
++#define FFP_ATTRIB_IS_TEX(i) (i == FFP_ATTRIB_TEX0 || i == FFP_ATTRIB_TEX1 || i == FFP_ATTRIB_TEX2 || i == FFP_ATTRIB_TEX3)
+ #define FFP_ATTRIB_IS_LIGHT(i) (i >= FFP_ATTRIB_COLOR && i <= FFP_ATTRIB_NORMAL)
+ #define FFP_ATTRIB_LIGHT_COEFF(i) (i - (FFP_ATTRIB_COLOR - FFP_AMBIENT_COEFF))
+ 
+@@ -1239,7 +1241,7 @@ void _glMultiDrawArrays_CustomShadersIMPL(SceGxmPrimitiveType gxm_p, uint16_t *i
+ void _glDrawElements_FixedFunctionIMPL(uint16_t *idx_buf, GLsizei count, uint32_t top_idx, uint32_t base_idx, GLboolean is_short); // glDrawElements implementation for rendering with ffp
+ void _glDrawArrays_FixedFunctionIMPL(GLint first, GLsizei count); // glDrawArrays implementation for rendering with ffp
+ void _glMultiDrawArrays_FixedFunctionIMPL(SceGxmPrimitiveType gxm_p, uint16_t *idx_buf, const GLint *first, const GLsizei *count, GLint lowest, GLsizei highest, GLsizei drawcount); // glMultiDrawArrays implementation for rendering with ffp
+-uint8_t reload_ffp_shaders(SceGxmVertexAttribute *attrs, SceGxmVertexStream *streams, GLboolean is_short); // Reloads current in use ffp shaders
++uint16_t reload_ffp_shaders(SceGxmVertexAttribute *attrs, SceGxmVertexStream *streams, SceGxmIndexSource index_type); // Reloads current in use ffp shaders
+ void upload_ffp_uniforms(); // Uploads required uniforms for the in use ffp shaders
+ void update_fogging_state(); // Updates current setup for fogging
+ void adjust_color_material_state(); // Updates internal settings for GL_COLOR_MATERIAL
+diff --git a/source/textures.c b/source/textures.c
+index 27e8a6c..6bb3878 100644
+--- a/source/textures.c
++++ b/source/textures.c
+@@ -2162,14 +2162,18 @@ void glActiveTexture(GLenum texture) {
+ 
+ 	// Changing current in use server texture unit
+ #ifndef SKIP_ERROR_HANDLING
+-	if ((texture < GL_TEXTURE0) && (texture > GL_TEXTURE15)) {
++	if ((texture < GL_TEXTURE0) || (texture > GL_TEXTURE15)) {
+ 		SET_GL_ERROR_WITH_VALUE(GL_INVALID_ENUM, texture)
+ 	} else
+ #endif
+ 	{
+ 		int8_t old_server_texture_unit = server_texture_unit;
+ 		server_texture_unit = texture - GL_TEXTURE0;
+-		if (matrix == &texture_matrix[old_server_texture_unit])
++		// Only FFP texture units have matrices. An out-of-range comparison can
++		// alias modelview/projection storage and silently change matrix mode.
++		if (old_server_texture_unit < TEXTURE_COORDS_NUM &&
++		    server_texture_unit < TEXTURE_COORDS_NUM &&
++		    matrix == &texture_matrix[old_server_texture_unit])
+ 			matrix = &texture_matrix[server_texture_unit];
+ 	}
+ }
+diff --git a/source/vgl.c b/source/vgl.c
+index 743df03..8312916 100644
+--- a/source/vgl.c
++++ b/source/vgl.c
+@@ -173,18 +173,18 @@ GLboolean vglInitWithCustomSizes(int pool_size, int width, int height, int ram_p
+ #endif
+ #endif
+ #if !defined(DISABLE_ADVANCED_SHADER_CACHE) || defined(HAVE_SHADER_CACHE)
+-	sceIoMkdir("ux0:data/shader_cache", 0777);
++	sceIoMkdir("ux0:data/scribblenauts/shader_cache", 0777);
+ #ifndef DISABLE_ADVANCED_SHADER_CACHE
+ 	char fname[256];
+-	sprintf(fname, "ux0:data/shader_cache/v%d", SHADER_CACHE_MAGIC);
++	sprintf(fname, "ux0:data/scribblenauts/shader_cache/v%d", SHADER_CACHE_MAGIC);
+ 	sceIoMkdir(fname, 0777);
+-	sprintf(fname, "ux0:data/shader_cache/v%d/v", SHADER_CACHE_MAGIC);
++	sprintf(fname, "ux0:data/scribblenauts/shader_cache/v%d/v", SHADER_CACHE_MAGIC);
+ 	sceIoMkdir(fname, 0777);
+-	sprintf(fname, "ux0:data/shader_cache/v%d/f", SHADER_CACHE_MAGIC);
++	sprintf(fname, "ux0:data/scribblenauts/shader_cache/v%d/f", SHADER_CACHE_MAGIC);
+ 	sceIoMkdir(fname, 0777);
+ #endif
+ #ifdef HAVE_SHADER_CACHE
+-	sprintf(vgl_shader_cache_path, "ux0:data/shader_cache/%s", titleid);
++	sprintf(vgl_shader_cache_path, "ux0:data/scribblenauts/shader_cache/%s", titleid);
+ 	sceIoMkdir(vgl_shader_cache_path, 0777);
+ #endif
+ #endif

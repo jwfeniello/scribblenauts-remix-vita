@@ -1,0 +1,22 @@
+{
+  "version": "LiveArea revision 2 for game build 0.7",
+  "inputs": {
+    "icon": "better icon.png",
+    "logo": "transparent logo.webp",
+    "launch": "cleaner big image.webp",
+    "scene_edit_target": "big image.png",
+    "layout_example": "pretty_livearea"
+  },
+  "scene_edit_tool": "Built-in image_gen via imagegen skill",
+  "scene_edit_prompt": "Use case: precise-object-edit\nAsset type: PS Vita LiveArea background, landscape ratio 840:500 (1.68:1), flat artwork only, NOT a screenshot or device mockup.\nEdit target: the supplied Scribblenauts Remix promotional scene. Remove ALL lettering and the large Scribblenauts Remix logo from the sky. Reconstruct the paper-cut trees and turquoise sky naturally where that logo was. Preserve the original drawn Maxwell on the RIGHT, his exact red rooster hat, headphones, blue hoodie, notebook, face and pose. Preserve the supporting characters including the dinosaur and scientist on the LEFT. Preserve the original flat 2D hand-drawn outlines, cardboard landscape, hanging paper clouds, bright green ground, and playful colors. Recompose for the aspect ratio without stretching.\nLayout constraints for the app's actual UI: top 26 percent of the image should be mostly quiet turquoise sky for a separately overlaid ORIGINAL logo. The central rectangle x=33% to 67%, y=28% to 64% must be quiet background with no character faces or foreground objects: the operating system places a 280x158 launch tile there. Maxwell should be in the rightmost 28%, clearly visible full-body from roughly y=28% to y=96%. Place the supporting characters toward the left outer quarter, along the ground. Maintain a continuous landscape, not separate panels. Keep all meaningful art inset from edges slightly.\nNo text, no logo, no labels, no UI, no buttons, no borders, no new characters or props. Keep the recognizable supplied artwork and its style.",
+  "generated_scene": "scene.png (locally retained generated working image)",
+  "output_source": "extras/livearea/source/scene.png",
+  "format_conversion": "scripts/prepare_livearea.ps1 (ImageMagick)",
+  "layout": "a1 centered gate; background 840x500, icon 128x128, startup 280x158, launch background 960x544; PNG-8 with at most 128 palette colors",
+  "references": [
+    "https://github.com/vitasdk/samples/blob/master/README.md",
+    "https://github.com/vitasdk/samples/tree/master/pretty_livearea",
+    "https://github.com/Vita3K/Vita3K/blob/master/vita3k/gui-qt/src/live_area_widget.cpp"
+  ],
+  "working_images": "Original working images are excluded from Git; the final Vita-sized artwork is included."
+}

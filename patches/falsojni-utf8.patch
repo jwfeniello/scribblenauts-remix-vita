@@ -1,0 +1,26 @@
+diff --git a/FalsoJNI.c b/FalsoJNI.c
+index f2e22df..9380eb6 100644
+--- a/FalsoJNI.c
++++ b/FalsoJNI.c
+@@ -1343,15 +1343,15 @@ const char* GetStringUTFChars(JNIEnv* env, jstring string, jboolean* isCopy) {
+         *isCopy = JNI_TRUE;
+     }
+ 
+-    char * ret = malloc(str->utf16->len + 1);
+-    if (ret == NULL) {
+-        fjni_logv_err("[JNI] GetStringUTFChars(env, %p, *isCopy): malloc failed", string);
++    if (jstr_utf16_to_utf8(str) == JNI_FALSE) {
++        fjni_logv_err("[JNI] GetStringUTFChars(env, %p, *isCopy): utf16 conversion failed", string);
+         return NULL;
+     }
+ 
+-    if (jstr_utf16_to_utf8(str) == JNI_FALSE) {
+-        fjni_logv_err("[JNI] GetStringUTFChars(env, %p, *isCopy): utf16 conversion failed", string);
+-        free(ret);
++    // UTF-8 can require more bytes than the UTF-16 code-unit count.
++    char * ret = malloc(str->utf8->len);
++    if (ret == NULL) {
++        fjni_logv_err("[JNI] GetStringUTFChars(env, %p, *isCopy): malloc failed", string);
+         return NULL;
+     }
+ 
