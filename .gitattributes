@@ -12,3 +12,4 @@ CMakeLists.txt text eol=lf
 .gitignore text eol=lf
 .gitmodules text eol=lf
 .gitattributes text eol=lf
+*.vpk binary

@@ -6,6 +6,8 @@ This is a **heavily AI-assisted** port of the Android version of Scribblenauts R
 
 You'll need the game data from **Scribblenauts Remix v6.9**. Enjoy!
 
+**[Download the VPK (build 0.9)](https://github.com/jwfeniello/scribblenauts-remix-vita/raw/refs/heads/main/releases/Scribblenauts%20Remix.vpk)** ? game data is not included.
+
 ## What's working
 
 - Rendering through VitaGL at 960x544.
@@ -22,7 +24,7 @@ Build 0.9 was tested on a physical PS Vita, with music, sound effects, both stic
 
 You need a homebrew-enabled PS Vita with VitaShell, `kubridge.skprx` installed and loaded, and `libshacccg.suprx` installed in `ur0:data/` or `ur0:data/external/`.
 
-1. Build `scribblenauts_vita.vpk` using the instructions below, then install it with VitaShell. The application name is **Scribblenauts Remix** and its title ID is `SCRB00001`.
+1. Download [Scribblenauts Remix.vpk](https://github.com/jwfeniello/scribblenauts-remix-vita/raw/refs/heads/main/releases/Scribblenauts%20Remix.vpk) and install it with VitaShell. You can also build the VPK using the instructions below. The application name is **Scribblenauts Remix** and its title ID is `SCRB00001`.
 2. Extract your own Android v6.9 APK and its matching expansion files.
 3. Copy `lib/armeabi/libScribAndroid.so` from the APK to `ux0:data/scribblenauts/libScribAndroid.so`. Use this ARM library, not another architecture or game version.
 4. Copy `main.51.com.wb.goog.scribbleremix.obb` to `ux0:data/scribblenauts/1p` and `patch.51.com.wb.goog.scribbleremix.obb` to `ux0:data/scribblenauts/1i`. Rename the files as shown; keep their contents intact.

@@ -25,3 +25,6 @@ __pycache__/
 .env.*
 /extras/livearea/source/*
 !/extras/livearea/source/provenance.json
+
+# Publish only the tested loader installer; game-data bundles stay ignored.
+!/releases/Scribblenauts Remix.vpk
