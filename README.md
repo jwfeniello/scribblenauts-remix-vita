@@ -6,7 +6,6 @@ This is a **heavily AI-assisted** port of the Android version of Scribblenauts R
 
 You'll need the game data from **Scribblenauts Remix v6.9**. Enjoy!
 
-**[Download the VPK (build 0.9)](https://github.com/jwfeniello/scribblenauts-remix-vita/raw/refs/heads/main/releases/Scribblenauts%20Remix.vpk)** ? game data is not included.
 
 ## What's working
 
