@@ -17,7 +17,6 @@ You'll need the game data from **Scribblenauts Remix v6.9**. Enjoy!
 - Custom bubble, LiveArea, and launch artwork.
 - Runtime logging disabled and no checksum scan on each launch.
 
-Build 0.9 was tested on a physical PS Vita, with music, sound effects, both sticks, and smooth movement confirmed. The game targets 30 FPS; scene loading and demanding scenes can still slow down. Full suspend/resume support and broader save/load and level testing remain work in progress. Online services and purchases are disabled.
 
 ## Installation
 
